@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PROFUTUNNY INVESTMENTS - Invoice Generator (Safari + LocalStorage)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    body {font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 10px;}
+    .container {background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);}
+    .btn {background: #2a5f8a; color: #fff; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; margin: 5px 0;}
+    .btn:hover {background: #1e4a75;}
+    table {width: 100%; border-collapse: collapse; margin-top: 10px;}
+    th, td {border: 1px solid #ddd; padding: 8px;}
+    th {background: #2a5f8a; color: #fff;}
+    #invoicePreview {display: none; margin-top: 20px;}
+  </style>
+</head>
+<body>
+  <div id="pdfLoading" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);color:#fff;display:flex;align-items:center;justify-content:center;z-index:9999;">Generating PDF, please wait...</div>
+  <div class="container">
+    <h2>PROFUTUNNY INVESTMENTS - Invoice Generator</h2>
+    <label>Company Logo:</label>
+    <input type="file" id="logoUpload" accept="image/*">
+    <img id="logoPreview" style="max-height:80px;display:none;margin:10px 0;">
+
+    <label>Invoice Number:</label>
+    <input type="text" id="invoiceNumber" placeholder="Enter invoice number" style="width:100%;">
+
+    <label>Date:</label>
+    <input type="date" id="invoiceDate" style="width:100%;">
+
+    <table id="itemsTable">
+      <thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Total</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><input type="text" class="item-desc" style="width:100%"></td>
+          <td><input type="number" class="item-qty" value="1" style="width:60px"></td>
+          <td><input type="number" class="item-price" value="0" step="0.01" style="width:80px"></td>
+          <td class="item-total">ZAR 0.00</td>
+          <td><button class="btn remove-item">Remove</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <button id="addItem" class="btn">Add Item</button>
+    <button id="generateInvoice" class="btn">Generate Invoice</button>
+    <button id="savePdf" class="btn" style="display:none;background:#d9534f;">Download PDF</button>
+    <button id="clearData" class="btn" style="background:#999;">Clear Saved Data</button>
+
+    <div id="invoicePreview"></div>
+  </div>
+
+  <script>
+    const { jsPDF } = window.jspdf;
+
+    function saveToLocalStorage() {
+      const data = {
+        invoiceNumber: document.getElementById('invoiceNumber').value,
+        invoiceDate: document.getElementById('invoiceDate').value,
+        logoSrc: document.getElementById('logoPreview').src || '',
+        items: [...document.querySelectorAll('#itemsTable tbody tr')].map(r => ({
+          desc: r.querySelector('.item-desc').value,
+          qty: r.querySelector('.item-qty').value,
+          price: r.querySelector('.item-price').value
+        }))
+      };
+      localStorage.setItem('invoiceData', JSON.stringify(data));
+    }
+
+    function loadFromLocalStorage() {
+      const saved = localStorage.getItem('invoiceData');
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      document.getElementById('invoiceNumber').value = data.invoiceNumber || '';
+      document.getElementById('invoiceDate').value = data.invoiceDate || new Date().toISOString().split('T')[0];
+      if (data.logoSrc) {
+        document.getElementById('logoPreview').src = data.logoSrc;
+        document.getElementById('logoPreview').style.display = 'block';
+      }
+      const tbody = document.querySelector('#itemsTable tbody');
+      tbody.innerHTML = '';
+      data.items.forEach(it => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><input type='text' class='item-desc' style='width:100%' value='${it.desc}'></td>
+          <td><input type='number' class='item-qty' value='${it.qty}' style='width:60px'></td>
+          <td><input type='number' class='item-price' value='${it.price}' step='0.01' style='width:80px'></td>
+          <td class='item-total'>ZAR ${(it.qty * it.price).toFixed(2)}</td>
+          <td><button class='btn remove-item'>Remove</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadFromLocalStorage();
+
+      const today = new Date();
+      if (!document.getElementById('invoiceDate').value)
+        document.getElementById('invoiceDate').valueAsDate = today;
+
+      const logoUpload = document.getElementById('logoUpload');
+      const logoPreview = document.getElementById('logoPreview');
+
+      logoUpload.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          logoPreview.src = ev.target.result;
+          logoPreview.style.display = 'block';
+          saveToLocalStorage();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      document.getElementById('addItem').onclick = () => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><input type='text' class='item-desc' style='width:100%'></td>
+          <td><input type='number' class='item-qty' value='1' style='width:60px'></td>
+          <td><input type='number' class='item-price' value='0' step='0.01' style='width:80px'></td>
+          <td class='item-total'>ZAR 0.00</td>
+          <td><button class='btn remove-item'>Remove</button></td>`;
+        document.querySelector('#itemsTable tbody').appendChild(tr);
+        saveToLocalStorage();
+      };
+
+      document.addEventListener('input', e => {
+        if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-price') || e.target.classList.contains('item-desc')) {
+          const row = e.target.closest('tr');
+          const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+          const price = parseFloat(row.querySelector('.item-price').value) || 0;
+          row.querySelector('.item-total').textContent = 'ZAR ' + (qty * price).toFixed(2);
+          saveToLocalStorage();
+        }
+      });
+
+      document.addEventListener('click', e => {
+        if (e.target.classList.contains('remove-item')) {
+          const row = e.target.closest('tr');
+          if (document.querySelectorAll('#itemsTable tbody tr').length > 1) row.remove();
+          saveToLocalStorage();
+        }
+      });
+
+      document.getElementById('generateInvoice').onclick = () => {
+        const invoiceNumber = document.getElementById('invoiceNumber').value;
+        const invoiceDate = document.getElementById('invoiceDate').value;
+        const items = [...document.querySelectorAll('#itemsTable tbody tr')].map(r => {
+          return {
+            desc: r.querySelector('.item-desc').value,
+            qty: parseFloat(r.querySelector('.item-qty').value) || 0,
+            price: parseFloat(r.querySelector('.item-price').value) || 0
+          };
+        });
+
+        let subtotal = 0;
+        let rowsHTML = '';
+        items.forEach(it => {
+          const total = it.qty * it.price;
+          subtotal += total;
+          rowsHTML += `<tr><td>${it.desc}</td><td>${it.qty}</td><td>ZAR ${it.price.toFixed(2)}</td><td>ZAR ${total.toFixed(2)}</td></tr>`;
+        });
+
+        document.getElementById('invoicePreview').innerHTML = `
+          <div style='padding:10px;border:1px solid #ddd;'>
+            ${logoPreview.src ? `<img src='${logoPreview.src}' style='max-height:70px;'>` : ''}
+            <h3>Invoice #${invoiceNumber}</h3>
+            <p>Date: ${invoiceDate}</p>
+            <table><thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rowsHTML}</tbody></table>
+            <h4 style='text-align:right;'>Subtotal: ZAR ${subtotal.toFixed(2)}</h4>
+          </div>`;
+        document.getElementById('invoicePreview').style.display = 'block';
+        document.getElementById('savePdf').style.display = 'inline-block';
+        saveToLocalStorage();
+      };
+
+      document.getElementById('savePdf').onclick = async () => {
+        const invoiceEl = document.getElementById('invoicePreview');
+        const invoiceNumber = document.getElementById('invoiceNumber').value || 'invoice';
+        const loading = document.getElementById('pdfLoading');
+        loading.style.display = 'flex';
+        await new Promise(r => setTimeout(r, 150)); // Safari render delay
+
+        const canvas = await html2canvas(invoiceEl, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#FFFFFF',
+          allowTaint: false,
+          imageTimeout: 0,
+          scrollX: 0,
+          scrollY: -window.scrollY
+        });
+
+        const pdf = new jsPDF({unit: 'mm', format: 'a4'});
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+        const imgWidth = 190;
+        const imgHeight = canvas.height * imgWidth / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${invoiceNumber}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        loading.style.display = 'none';
+      };
+
+      document.getElementById('clearData').onclick = () => {
+        localStorage.removeItem('invoiceData');
+        location.reload();
+      };
+    });
+  </script>
+</body>
+</html>
